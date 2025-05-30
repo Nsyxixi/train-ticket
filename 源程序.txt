@@ -1,0 +1,764 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <map>
+#include <cstdlib>
+using namespace std;
+
+// 将数字转换为字符串的辅助函数
+std::string to_string(int value) {
+    std::stringstream ss;
+    ss << value;
+    return ss.str();
+}
+
+// 车票类
+class Ticket {
+public:
+    string ticketID;      // 车票唯一标识符
+    string trainNumber;   // 车次
+    string carNumber;     // 车厢号
+    string seatNumber;    // 座位号
+    string type;          // 车厢类型
+    bool isSold;          // 是否已售出
+
+    Ticket(string tn, string cn, string sn, string t) 
+        : trainNumber(tn), carNumber(cn), seatNumber(sn), type(t), isSold(false) {
+        ticketID = generateTicketID(trainNumber); // 使用车次编号生成唯一的车票编号
+    }
+
+    // 生成车票唯一标识符
+    string generateTicketID(const string& trainNumber) {
+        static map<string, int> ticketCounters; // 为每个车次维护一个独立的计数器
+        if (ticketCounters.find(trainNumber) == ticketCounters.end()) {
+            ticketCounters[trainNumber] = 1; // 如果车次不存在，初始化计数器为1
+        } else {
+            ticketCounters[trainNumber]++; // 否则，递增计数器
+        }
+        return trainNumber + "-" + to_string(ticketCounters[trainNumber]); // 格式为 "T123-1", "T123-2", ...
+    }
+
+    // 格式化座位号
+    string formatSeatNumber() const {
+        if (type == "硬卧车厢") {
+            int berth = atoi(seatNumber.c_str());
+            int room = (berth - 1) / 6 + 1; // 每6个铺位为一个房间
+            int berthInRoom = (berth - 1) % 6 + 1;
+            return to_string(room) + "号房" + to_string(berthInRoom) + "号铺";
+        } else if (type == "软卧车厢") {
+            int berth = atoi(seatNumber.c_str());
+            int room = (berth - 1) / 4 + 1; // 每4个铺位为一个房间
+            int berthInRoom = (berth - 1) % 4 + 1;
+            return to_string(room) + "号房" + to_string(berthInRoom) + "号铺";
+        } else if (type == "商务座" || type == "一等座" || type == "二等座") {
+            return seatNumber.substr(1) + "排" + seatNumber[0] + "座";
+        } else {
+            return seatNumber; // 其他类型保持原样
+        }
+    }
+
+    void display() const {
+        cout << "车票编号：" << ticketID << " 车次：" << trainNumber << " 车厢号：" << carNumber 
+             << " 座位号：" << formatSeatNumber() << " 类型：" << type << endl;
+    }
+};
+
+// 火车售票系统类
+class TrainTicketSystem {
+public:
+    map<string, vector<Ticket> > ticketsByTrain; // 按车次存储车票
+    map<string, map<string, Ticket*> > soldTicketsByTrain; // 按车次存储已售车票
+    vector<string> predefinedTrains;
+
+    TrainTicketSystem() : predefinedTrains(9) {
+        const string temp[] = {"T123", "T456", "T789", "G123", "G456", "G789", "D123", "D456", "D789"};
+        for (int i = 0; i < 9; ++i) {
+            predefinedTrains[i] = temp[i];
+        }
+
+        for (size_t i = 0; i < predefinedTrains.size(); ++i) {
+            const string& trainNumber = predefinedTrains[i];
+            ticketsByTrain[trainNumber] = vector<Ticket>();
+            soldTicketsByTrain[trainNumber] = map<string, Ticket*>();
+            if (trainNumber[0] == 'T') {
+                initializeExpressTrainTickets(trainNumber);
+            } else if (trainNumber[0] == 'G') {
+                initializeHighSpeedTrainTickets(trainNumber);
+            } else if (trainNumber[0] == 'D') {
+                initializeEMUTrainTickets(trainNumber); // 初始化动车车票
+            }
+        }
+    }
+
+    // 初始化特快旅客列车车票
+    void initializeExpressTrainTickets(const string& trainNumber) {
+        // 硬座车厢：5节，每节110个座位（3+2型）
+        for (int car = 1; car <= 5; ++car) {
+            string carNumber = to_string(car);
+            for (int seat = 1; seat <= 110; ++seat) {
+                ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, to_string(seat), "硬座车厢"));
+            }
+        }
+
+        // 软座车厢：2节，每节72个座位（2+2型）
+        for (int car = 6; car <= 7; ++car) {
+            string carNumber = to_string(car);
+            for (int seat = 1; seat <= 72; ++seat) {
+                ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, to_string(seat), "软座车厢"));
+            }
+        }
+
+        // 硬卧车厢：4节，每节66个铺位
+        for (int car = 8; car <= 11; ++car) {
+            string carNumber = to_string(car);
+            for (int berth = 1; berth <= 66; ++berth) {
+                ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, to_string(berth), "硬卧车厢"));
+            }
+        }
+
+        // 软卧车厢：2节，每节32个铺位
+        for (int car = 12; car <= 13; ++car) {
+            string carNumber = to_string(car);
+            for (int berth = 1; berth <= 32; ++berth) {
+                ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, to_string(berth), "软卧车厢"));
+            }
+        }
+    }
+
+    // 初始化高铁车票
+    void initializeHighSpeedTrainTickets(const string& trainNumber) {
+        // 商务座：1节，每节7排，每排3座（A、C、F）
+        string carNumber = "1";
+        for (int row = 1; row <= 7; ++row) {
+            for (char seat = 'A'; seat <= 'F'; ++seat) {
+                if (seat == 'B' || seat == 'D' || seat == 'E') continue;
+                string seatNumber = string(1, seat) + to_string(row);
+                ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, seatNumber, "商务座"));
+            }
+        }
+
+        // 一等座：3节，每节10排，每排4座（A、C、D、F）
+        for (int car = 2; car <= 4; ++car) {
+            carNumber = to_string(car);
+            for (int row = 1; row <= 10; ++row) {
+                for (char seat = 'A'; seat <= 'F'; ++seat) {
+                    if (seat == 'B' || seat == 'E') continue;
+                    string seatNumber = string(1, seat) + to_string(row);
+                    ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, seatNumber, "一等座"));
+                }
+            }
+        }
+
+        // 二等座：3节，每节17排，每排5座（A、B、C、D、F）
+        for (int car = 5; car <= 7; ++car) {
+            carNumber = to_string(car);
+            for (int row = 1; row <= 17; ++row) {
+                for (char seat = 'A'; seat <= 'F'; ++seat) {
+                    if (seat == 'E') continue;
+                    string seatNumber = string(1, seat) + to_string(row);
+                    ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, seatNumber, "二等座"));
+                }
+            }
+        }
+    }
+
+    // 初始化动车车票
+    void initializeEMUTrainTickets(const string& trainNumber) {
+        // 一等座：2节，每节7排，每排4座（A、C、D、F）
+        for (int car = 1; car <= 2; ++car) {
+            string carNumber = to_string(car);
+            for (int row = 1; row <= 7; ++row) {
+                for (char seat = 'A'; seat <= 'F'; ++seat) {
+                    if (seat == 'B' || seat == 'E') continue;
+                    string seatNumber = string(1, seat) + to_string(row);
+                    ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, seatNumber, "一等座"));
+                }
+            }
+        }
+
+        // 二等座：5节，每节15排，每排5座（A、B、C、D、F）
+        for (int car = 3; car <= 7; ++car) {
+            string carNumber = to_string(car);
+            for (int row = 1; row <= 15; ++row) {
+                for (char seat = 'A'; seat <= 'F'; ++seat) {
+                    if (seat == 'E') continue;
+                    string seatNumber = string(1, seat) + to_string(row);
+                    ticketsByTrain[trainNumber].push_back(Ticket(trainNumber, carNumber, seatNumber, "二等座"));
+                }
+            }
+        }
+    }
+
+    // 显示所有车次及其时间
+    void displayTrains() {
+        cout << "特快旅客列车：" << endl;
+        cout << "1. T123: 6:00-11:00" << endl;
+        cout << "2. T456: 12:00-17:00" << endl;
+        cout << "3. T789: 18:00-23:00" << endl;
+
+        cout << "高铁：" << endl;
+        cout << "4. G123: 8:00-9:00" << endl;
+        cout << "5. G456: 14:00-15:00" << endl;
+        cout << "6. G789: 19:00-20:00" << endl;
+
+        cout << "动车：" << endl;
+        cout << "7. D123: 8:00-10:00" << endl;
+        cout << "8. D456: 14:00-16:00" << endl;
+        cout << "9. D789: 19:00-21:00" << endl;
+    }
+
+    // 售票函数
+    void sellTicket() {
+        displayTrains();
+
+        int trainChoice;
+        while (true) {
+            cout << "\n请选择车次编号（输入0返回上步）：";
+            if (!(cin >> trainChoice)) { // 检查输入是否为数字
+                cin.clear(); // 清除错误状态
+                cin.ignore(1000, '\n');  // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+
+            if (trainChoice == 0) {
+                return; // 返回主菜单
+            }
+
+            if (trainChoice < 1 || trainChoice > predefinedTrains.size()) {
+                cout << "无效的车次选择！" << endl;
+                continue;
+            }
+
+            string selectedTrain = predefinedTrains[trainChoice - 1];
+
+            if (selectedTrain[0] == 'T') {
+                sellExpressTrainTicket(selectedTrain);
+            } else if (selectedTrain[0] == 'G') {
+                sellHighSpeedTrainTicket(selectedTrain);
+            } else if (selectedTrain[0] == 'D') {
+                sellEMUTrainTicket(selectedTrain); // 动车售票
+            }
+            return; // 返回主菜单
+        }
+    }
+
+    // 特快旅客列车售票函数
+    void sellExpressTrainTicket(const string& selectedTrain) {
+        vector<Ticket>& tickets = ticketsByTrain[selectedTrain];
+        map<string, Ticket*>& soldTickets = soldTicketsByTrain[selectedTrain];
+
+        int type;
+        string ticketType;
+
+        while (true) {
+            cout << "请选择车厢类型：1. 硬座 2. 软座 3. 硬卧 4. 软卧 0. 返回上步" << endl;
+            if (!(cin >> type)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+
+            if (type == 0) {
+            	sellTicket(); 
+                return; // 返回选择车次
+            }
+
+            if (type >= 1 && type <= 4) {
+                switch (type) {
+                    case 1: ticketType = "硬座车厢"; break;
+                    case 2: ticketType = "软座车厢"; break;
+                    case 3: ticketType = "硬卧车厢"; break;
+                    case 4: ticketType = "软卧车厢"; break;
+                }
+                break; // 输入合法，退出循环
+            } else {
+                cout << "无效选择，请重新输入！" << endl;
+            }
+        }
+
+        // 根据车厢类型选择座位或铺位
+        if (type == 1) { // 硬座车厢
+            int seatType;
+            while (true) {
+            cout <<  "请选择座位类型：1. 靠窗 2. 中间 3. 靠走廊 0. 返回上步" << endl;
+            if (!(cin >> seatType)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+        
+                if (seatType == 0) {
+                	sellExpressTrainTicket(selectedTrain);
+                	return;
+                }
+
+                if (seatType >= 1 && seatType <= 3) {
+                    break; // 输入合法，退出循环
+                } else {
+                    cout << "无效选择，请重新输入！" << endl;
+                }
+            }
+
+            // 查找符合条件的座位
+            bool found = false;
+            for (size_t i = 0; i < tickets.size(); ++i) {
+                if (!tickets[i].isSold && tickets[i].type == ticketType) {
+                    int seatNumber = atoi(tickets[i].seatNumber.c_str());
+                    int col = (seatNumber - 1) % 5 + 1; // 硬座每排5个座位
+
+                    if ((col == 1 || col == 5) && seatType == 1 || // 靠窗
+                        (col == 2) && seatType == 2 || // 中间
+                        (col == 3 || col == 4) && seatType == 3) { // 靠走廊
+                        tickets[i].isSold = true;
+                        soldTickets[tickets[i].ticketID] = &tickets[i]; // 将车票加入已售列表
+                        cout << "售票成功！" << endl;
+                        tickets[i].display();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!found) {
+                cout << "该类型座位已售罄！" << endl;
+            }
+
+        } else if (type == 2) { // 软座车厢
+            int seatType;
+            
+            while (true) {
+            cout << "请选择座位类型：1. 靠窗 2. 靠走廊 0. 返回上步"  << endl;
+            if (!(cin >> seatType)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+         
+
+                if (seatType == 0) {
+                	sellExpressTrainTicket(selectedTrain);
+                    return; // 返回选择车厢类型
+                }
+
+                if (seatType >= 1 && seatType <= 2) {
+                    break; // 输入合法，退出循环
+                } else {
+                    cout << "无效选择，请重新输入！" << endl;
+                }
+            }
+
+            // 查找符合条件的座位
+            bool found = false;
+            for (size_t i = 0; i < tickets.size(); ++i) {
+                if (!tickets[i].isSold && tickets[i].type == ticketType) {
+                    int seatNumber = atoi(tickets[i].seatNumber.c_str());
+                    int col = (seatNumber - 1) % 4 + 1; // 软座每排4个座位
+
+                    if ((col == 1 || col == 4) && seatType == 1 || // 靠窗
+                        (col == 2 || col == 3) && seatType == 2) { // 靠走廊
+                        tickets[i].isSold = true;
+                        soldTickets[tickets[i].ticketID] = &tickets[i]; // 将车票加入已售列表
+                        cout << "售票成功！" << endl;
+                        tickets[i].display();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!found) {
+                cout << "该类型座位已售罄！" << endl;
+            }
+
+        } else if (type == 3) { // 硬卧车厢
+            int berthType;
+            while (true) {
+            cout << "请选择铺位类型：1. 上铺 2. 中铺 3. 下铺 0. 返回上步"  << endl;
+            if (!(cin >> berthType)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+
+                if (berthType == 0) {
+                	sellExpressTrainTicket(selectedTrain);
+                    return; // 返回选择车厢类型
+                }
+
+                if (berthType >= 1 && berthType <= 3) {
+                    break; // 输入合法，退出循环
+                } else {
+                    cout << "无效选择，请重新输入！" << endl;
+                }
+            }
+
+            // 查找符合条件的铺位
+            bool found = false;
+            for (size_t i = 0; i < tickets.size(); ++i) {
+                if (!tickets[i].isSold && tickets[i].type == ticketType) {
+                    int seatNumber = atoi(tickets[i].seatNumber.c_str());
+                    int berth = (seatNumber - 1) % 6 + 1; // 每6个铺位为一组
+
+                    if ((berth == 1 || berth == 2) && berthType == 1 || // 上铺
+                        (berth == 3 || berth == 4) && berthType == 2 || // 中铺
+                        (berth == 5 || berth == 6) && berthType == 3) { // 下铺
+                        tickets[i].isSold = true;
+                        soldTickets[tickets[i].ticketID] = &tickets[i]; // 将车票加入已售列表
+                        cout << "售票成功！" << endl;
+                        tickets[i].display();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!found) {
+                cout << "该类型座位已售罄！" << endl;
+            }
+
+        } else if (type == 4) { // 软卧车厢
+            int berthType;
+            while (true) {
+            cout << "请选择铺位类型：1. 上铺 2. 下铺 0. 返回上步"  << endl;
+            if (!(cin >> berthType)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+            
+
+                if (berthType == 0) {
+                	sellExpressTrainTicket(selectedTrain);
+                    return; // 返回选择车厢类型
+                }
+
+                if (berthType >= 1 && berthType <= 2) {
+                    break; // 输入合法，退出循环
+                } else {
+                    cout << "无效选择，请重新输入！" << endl;
+                }
+            }
+
+            // 查找符合条件的铺位
+            bool found = false;
+            for (size_t i = 0; i < tickets.size(); ++i) {
+                if (!tickets[i].isSold && tickets[i].type == ticketType) {
+                    int seatNumber = atoi(tickets[i].seatNumber.c_str());
+                    int berth = (seatNumber - 1) % 4 + 1; // 每4个铺位为一组
+
+                    if ((berth == 1 || berth == 2) && berthType == 1 || // 上铺
+                        (berth == 3 || berth == 4) && berthType == 2) { // 下铺
+                        tickets[i].isSold = true;
+                        soldTickets[tickets[i].ticketID] = &tickets[i]; // 将车票加入已售列表
+                        cout << "售票成功！" << endl;
+                        tickets[i].display();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!found) {
+                cout << "该类型座位已售罄！" << endl;
+            }
+        }
+    }
+
+    // 高铁售票函数
+    void sellHighSpeedTrainTicket(const string& selectedTrain) {
+        vector<Ticket>& tickets = ticketsByTrain[selectedTrain];
+        map<string, Ticket*>& soldTickets = soldTicketsByTrain[selectedTrain];
+
+        int seatType;
+        while (true) {
+            cout << "请选择座位类型：1. 商务座 2. 一等座 3. 二等座 0. 返回上步" << endl;
+            if (!(cin >> seatType)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+
+            if (seatType == 0) {
+            	sellTicket();
+                return; // 返回选择车次
+            }
+
+            if (seatType >= 1 && seatType <= 3) {
+                break; // 输入合法，退出循环
+            } else {
+                cout << "无效的座位类型选择！" << endl;
+            }
+        }
+
+        string ticketType;
+        switch (seatType) {
+            case 1: ticketType = "商务座"; break;
+            case 2: ticketType = "一等座"; break;
+            case 3: ticketType = "二等座"; break;
+        }
+
+        int positionChoice;
+        while (true) {
+            cout << "请选择座位位置：1. 靠窗 2. 靠走廊 3. 中间（仅二等座） 0. 返回上步" << endl;
+            cin >> positionChoice;
+
+            if (positionChoice == 0) {
+            	sellHighSpeedTrainTicket(selectedTrain);
+                return; // 返回选择座位类型
+            }
+
+            if ((positionChoice >= 1 && positionChoice <= 3 && ticketType == "二等座") ||
+                (positionChoice >= 1 && positionChoice <= 2 && (ticketType == "商务座" || ticketType == "一等座"))) {
+                break; // 输入合法，退出循环
+            } else {
+                cout << "无效的座位位置选择！" << endl;
+            }
+        }
+
+        // 查找并出售车票
+        for (size_t i = 0; i < tickets.size(); ++i) {
+            if (!tickets[i].isSold && tickets[i].type == ticketType) {
+                char seatLetter = tickets[i].seatNumber[0];
+                int row = atoi(tickets[i].seatNumber.substr(1).c_str());
+                string position;
+
+                if ((seatLetter == 'A' || seatLetter == 'F') && positionChoice == 1) {
+                    position = "靠窗";
+                } else if ((seatLetter == 'C' || seatLetter == 'D') && positionChoice == 2) {
+                    position = "靠走廊";
+                } else if (seatLetter == 'B' && positionChoice == 3 && ticketType == "二等座") {
+                    position = "中间";
+                } else {
+                    continue; // 不符合用户选择，跳过
+                }
+
+                tickets[i].isSold = true;
+                soldTickets[tickets[i].ticketID] = &tickets[i];
+                cout << "售票成功！" << endl;
+                cout << "车票编号:" << tickets[i].ticketID << "车次：" << tickets[i].trainNumber
+                     << " 车厢号：" << tickets[i].carNumber << "座位号：" << tickets[i].formatSeatNumber()
+                     << " 类型：" << tickets[i].type << endl;
+                return;
+            }
+        }
+
+        cout << "该类型座位已售罄！" << endl;
+    }
+
+
+    // 动车售票函数
+    void sellEMUTrainTicket(const string& selectedTrain) {
+        vector<Ticket>& tickets = ticketsByTrain[selectedTrain];
+        map<string, Ticket*>& soldTickets = soldTicketsByTrain[selectedTrain];
+
+        int seatType;
+        while (true) {
+            cout << "请选择座位类型：1. 一等座 2. 二等座 0. 返回上步" << endl;
+            if (!(cin >> seatType)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+
+            if (seatType == 0) {
+                sellTicket();
+                return; // 返回选择车次
+            }
+
+            if (seatType >= 1 && seatType <= 2) {
+                break; // 输入合法，退出循环
+            } else {
+                cout << "无效的座位类型选择！" << endl;
+            }
+        }
+
+        string ticketType;
+        switch (seatType) {
+            case 1: ticketType = "一等座"; break;
+            case 2: ticketType = "二等座"; break;
+        }
+
+        int positionChoice;
+        while (true) {
+            cout << "请选择座位位置：1. 靠窗 2. 靠走廊 3. 中间（仅二等座） 0. 返回上步" << endl;
+            cin >> positionChoice;
+
+            if (positionChoice == 0) {
+                sellEMUTrainTicket(selectedTrain);
+                return; // 返回选择座位类型
+            }
+
+            if ((positionChoice >= 1 && positionChoice <= 3 && ticketType == "二等座") ||
+                (positionChoice >= 1 && positionChoice <= 2 && ticketType == "一等座")) {
+                break; // 输入合法，退出循环
+            } else {
+                cout << "无效的座位位置选择！" << endl;
+            }
+        }
+
+        // 查找并出售车票
+        for (size_t i = 0; i < tickets.size(); ++i) {
+            if (!tickets[i].isSold && tickets[i].type == ticketType) {
+                char seatLetter = tickets[i].seatNumber[0];
+                int row = atoi(tickets[i].seatNumber.substr(1).c_str());
+                string position;
+
+                if ((seatLetter == 'A' || seatLetter == 'F') && positionChoice == 1) {
+                    position = "靠窗";
+                } else if ((seatLetter == 'C' || seatLetter == 'D') && positionChoice == 2) {
+                    position = "靠走廊";
+                } else if (seatLetter == 'B' && positionChoice == 3 && ticketType == "二等座") {
+                    position = "中间";
+                } else {
+                    continue; // 不符合用户选择，跳过
+                }
+
+                tickets[i].isSold = true;
+                soldTickets[tickets[i].ticketID] = &tickets[i];
+                cout << "售票成功！" << endl;
+                cout << "车票编号:" << tickets[i].ticketID << " 车次：" << tickets[i].trainNumber
+                     << " 车厢号：" << tickets[i].carNumber << " 座位号：" << tickets[i].formatSeatNumber()
+                     << " 类型：" << tickets[i].type << endl;
+                return;
+            }
+        }
+
+        cout << "该类型座位已售罄！" << endl;
+    }
+
+    // 查询剩余票
+    void queryRemainingTickets() {
+        displayTrains();
+
+        int trainChoice;
+        while (true) {
+            cout << "\n请选择车次编号（输入0返回上步）：";
+            if (!(cin >> trainChoice)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+
+            if (trainChoice == 0) {
+                sellTicket();
+                return; // 返回主菜单
+            }
+
+            if (trainChoice < 1 || trainChoice > predefinedTrains.size()) {
+                cout << "无效的车次选择！" << endl;
+                continue;
+            }
+
+            string selectedTrain = predefinedTrains[trainChoice - 1];
+            const vector<Ticket>& tickets = ticketsByTrain[selectedTrain];
+
+            cout << "\n车次 " << selectedTrain << " 的剩余车票：" << endl;
+            bool hasRemainingTickets = false;
+
+            for (size_t i = 0; i < tickets.size(); ++i) {
+                if (!tickets[i].isSold) {
+                    tickets[i].display();
+                    hasRemainingTickets = true;
+                }
+            }
+
+            if (!hasRemainingTickets) {
+                cout << "车次 " << selectedTrain << " 的车票已售罄！" << endl;
+            }
+            return; // 返回主菜单
+        }
+    }
+
+    // 退票
+    void returnTicket() {
+        displayTrains();
+
+        int trainChoice;
+        while (true) {
+            cout << "\n请选择车次编号（输入0返回上步）：" << endl;
+            if (!(cin >> trainChoice)) { // 检查输入是否为数字
+                cin.clear();
+                cin.ignore(1000, '\n'); // 忽略错误输入
+                cout << "无效输入，请输入数字！" << endl;
+                continue;
+            }
+
+            if (trainChoice == 0) {
+                sellTicket();
+                return; // 返回主菜单
+            }
+
+            if (trainChoice < 1 || trainChoice > predefinedTrains.size()) {
+                cout << "无效的车次选择！" << endl;
+                continue;
+            }
+
+            string selectedTrain = predefinedTrains[trainChoice - 1];
+            map<string, Ticket*>& soldTickets = soldTicketsByTrain[selectedTrain];
+
+            string ticketID;
+            cout << "请输入车票编号（输入0返回上步）：";
+            cin >> ticketID;
+
+            if (ticketID == "0") {
+                return; // 返回选择车次
+            }
+
+            map<string, Ticket*>::iterator it = soldTickets.find(ticketID);
+            if (it != soldTickets.end()) {
+                it->second->isSold = false;
+                soldTickets.erase(it);
+                cout << "退票成功！" << endl;
+                it->second->display();
+                return; // 返回主菜单
+            } else {
+                cout << "无效的车票编号或车票未售出！" << endl;
+            }
+        }
+    }
+};
+
+// 主函数
+int main() {
+    TrainTicketSystem system;
+    int choice;
+
+    while (true) {
+        cout << "1. 售票\n2. 退票\n3. 查询剩余票\n4. 退出\n请选择操作：";
+        if (!(cin >> choice)) { // 检查输入是否为数字
+            cin.clear();
+            cin.ignore(1000, '\n'); // 忽略错误输入
+            cout << "无效输入，请输入数字！" << endl;
+            continue;
+        }
+
+        switch (choice) {
+            case 1:
+                system.sellTicket();
+                break;
+            case 2:
+                system.returnTicket();
+                break;
+            case 3:
+                system.queryRemainingTickets();
+                break;
+            case 4:
+                cout << "退出系统！" << endl;
+                return 0;
+            default:
+                cout << "无效选择，请重新输入！" << endl;
+        }
+    }
+
+    return 0;
+}
